@@ -15,5 +15,9 @@ class TarefaUpdate(BaseModel):
     descricao: Optional[str] = Field(None, min_length=1, max_length=500)
     concluido: Optional[bool] = None
 
-class Tarefa(TarefaBase):
+class TarefaResponse(TarefaBase):
     id: int
+
+    model_config = {
+        "from_attributes": True
+    }

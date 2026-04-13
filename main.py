@@ -1,57 +1,59 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 
-from schemas import Tarefa, TarefaCreate, TarefaUpdate
-from database import tarefas, proximo_id
+import crud
+from database import engine, SessionLocal
+import models
+import schemas
+
+models.Base.metadata.create_all(bind=engine)
+
 
 app = FastAPI(title="CRUD de Tarefas")
 
-@app.get("/api/tarefas", response_model=list[Tarefa])
-def listar_tarefas():
-    return tarefas
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@app.get("/api/tarefas/{id}", response_model=Tarefa)
-def obter_tarefa(id: int):
-    for tarefa in tarefas:
-        if tarefa["id"] == id:
-            return tarefa
-    raise HTTPException(status_code=404, detail="Tarefa não encontrada")
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
-@app.post("/api/tarefas", response_model=Tarefa, status_code=201)
-def criar_tarefa(nova_tarefa: TarefaCreate):
-    global proximo_id
+@app.get("/api/tarefas", response_model=list[schemas.TarefaResponse])
+def listar_tarefas(db: Session = Depends(get_db)):
+    return crud.listar_tarefas(db)
 
-    tarefa = {
-        "id": proximo_id,
-        "titulo": nova_tarefa.titulo,
-        "descricao": nova_tarefa.descricao,
-        "concluido": nova_tarefa.concluido,
-    }
+@app.get("/api/tarefas/{id}", response_model=schemas.TarefaResponse)
+def obter_tarefa(id: int, db: Session = Depends(get_db)):
+    tarefa = crud.obter_tarefa(db, id)
+    if not tarefa:
+        raise HTTPException(status_code=404, detail="Tarefa não encontrada")
+    return tarefa
 
-    tarefas.append(tarefa)
-    proximo_id += 1
+@app.post("/api/tarefas", response_model=schemas.TarefaResponse, status_code=201)
+def criar_tarefa(tarefa: schemas.TarefaCreate, db: Session = Depends(get_db)):
+    return crud.criar_tarefa(db, tarefa)
+
+
+@app.put("/api/tarefas/{id}", response_model=schemas.TarefaResponse)
+def atualizar_tarefa(id: int, dados: schemas.TarefaUpdate, db: Session = Depends(get_db)):
+    tarefa = crud.atualizar_tarefa(db, id, dados)
+    if not tarefa:
+        raise HTTPException(status_code=404, detail="Tarefa não encontrada")
     return tarefa
 
 
-@app.put("/api/tarefas/{id}", response_model=Tarefa)
-def atualizar_tarefa(id: int, tarefa_atualizada: TarefaUpdate):
-    for tarefa in tarefas:
-        if tarefa["id"] == id:
-            if tarefa_atualizada.titulo is not None:
-                tarefa["titulo"] = tarefa_atualizada.titulo
-            if tarefa_atualizada.descricao is not None:
-                tarefa["descricao"] = tarefa_atualizada.descricao
-            if tarefa_atualizada.concluido is not None:
-                tarefa["concluido"] = tarefa_atualizada.concluido
-            return tarefa
-
-    raise HTTPException(status_code=404, detail="Tarefa não encontrada")
-
-
 @app.delete("/api/tarefas/{id}")
-def excluir_tarefa(id: int):
-    for i, tarefa in enumerate(tarefas):
-        if tarefa["id"] == id:
-            tarefas.pop(i)
-            return {"mensagem": "Tarefa excluída com sucesso"}
-
-    raise HTTPException(status_code=404, detail="Tarefa não encontrada")
+def excluir_tarefa(id: int, db: Session = Depends(get_db)):
+    tarefa = crud.excluir_tarefa(db, id)
+    if not tarefa:
+        raise HTTPException(status_code=404, detail="Tarefa não encontrada")
+    return {"mensagem": "Tarefa excluída com sucesso"}
